@@ -1,15 +1,16 @@
 import React from 'react';
-import {
-  Segment,
-  Header,
-  Form,
-  TextArea,
-  Button
+import { 
+  Segment, 
+  Header, 
+  Form, 
+  TextArea, 
+  Button 
 } from 'semantic-ui-react';
 import { connect } from 'react-redux';
 import axios from 'axios';
 import { setFlash } from '../actions/flash';
-import { addMessage } from '../actions/messages';
+import { addMessage, getMessages } from '../actions/messages';
+import { startTyping, stopTyping } from '../actions/isTyping';
 import ChatMessage from './ChatMessage';
 
 class ChatWindow extends React.Component {
@@ -19,21 +20,39 @@ class ChatWindow extends React.Component {
     const { dispatch } = this.props;
     window.MessageBus.start()
     dispatch(setFlash('Welcome To My Chat App', 'green'))
+    dispatch(getMessages());
+
+    window.MessageBus.subscribe('/typing', (data) => {
+      data.typing ? 
+        dispatch(startTyping(data.id)) 
+       :
+        dispatch(stopTyping(data.id))
+    })
 
     window.MessageBus.subscribe('/chat_channel', (data) => {
-      dispatch(addMessage(data));
+      dispatch(addMessage(JSON.parse(data)));
     });
+
   }
 
   componentWillUnmount() {
     window.MessageBus.unsubscribe('/chat_channel')
+    window.MessageBus.unsubscribe('/typing')
+  }
+
+  byTime = (x,y) => {
+    if (x.created_at > y.created_at)
+      return 1
+    if (x.created_at < y.created_at)
+      return -1
+    return 0
   }
 
   displayMessages = () => {
     const { messages } = this.props;
 
     if (messages.length)
-      return messages.map( (message, i) => {
+      return messages.sort(this.byTime).map( (message, i) => {
         return <ChatMessage key={i} message={message} />
       })
     else
@@ -44,30 +63,50 @@ class ChatWindow extends React.Component {
       )
   }
 
+  startTyping = () => {
+    axios.post('/api/typing', { typing: true })
+      .then( ({ headers }) => this.props.dispatch({ type: 'HEADERS', headers }) )
+  }
+
+  stopTyping = () => {
+    axios.post('/api/typing')
+      .then( ({ headers }) => this.props.dispatch({ type: 'HEADERS', headers }) )
+  }
+
   addMessage = (e) => {
     e.preventDefault();
+    this.stopTyping();
     const { dispatch, user: { email }} = this.props;
     const { newMessage } = this.state;
     const message = { email, body: newMessage };
 
     axios.post('/api/messages', message)
-      .then( res => {
-        this.setState({ newMessage: '' }_
+      .then( ({ headers }) => {
+        dispatch({ type: 'HEADERS', headers })
+        this.setState({ newMessage: '' })
       })
-      .catch( err => {
+      .catch( ({ headers }) => {
+        dispatch({ type: 'HEADERS', headers })
         dispatch(setFlash('Error Posting Messages', 'red'))
       });
   }
 
   setMessage = (e) => {
+    const { newMessage } = this.state;
+    const { value } = e.target;
+    if (newMessage && !value)
+      this.stopTyping()
+    else
+      this.startTyping()
     this.setState({ newMessage: e.target.value })
   }
 
   render() {
+    const { isTyping } = this.props;
     return (
       <Segment basic>
-        <Header
-          as="h2"
+        <Header 
+          as="h2" 
           textAlign="center"
           style={styles.underline}
         >
@@ -76,6 +115,7 @@ class ChatWindow extends React.Component {
         <Segment basic style={styles.mainWindow}>
           <Segment basic>
             { this.displayMessages() }
+            { isTyping.length > 0 && <Header as="h5">Someone is typing</Header> }
           </Segment>
         </Segment>
         <Segment style={styles.messageInput}>
@@ -119,7 +159,13 @@ const mapStateToProps = (state) => {
   return {
     user: state.user,
     messages: state.messages,
+    isTyping: state.isTyping,
   }
 }
 
 export default connect(mapStateToProps)(ChatWindow);
+
+
+
+
+
