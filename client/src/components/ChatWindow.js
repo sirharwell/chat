@@ -9,7 +9,7 @@ class ChatWindow extends Component {
   state = { newMessage: '' };
 
   componentDidMount() {
-    this.props.dispatch(setFlash('Welcome To React Chat!', 'success'));
+    this.props.dispatch(setFlash('Welcome To React Chat!', 'green'));
   }
 
   displayMessages = () => {
